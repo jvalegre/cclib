@@ -10,6 +10,7 @@
 
 import re
 from itertools import zip_longest
+import datetime
 
 import numpy
 from packaging.version import parse as parse_version
@@ -46,6 +47,12 @@ class ORCA(logfileparser.Logfile):
 
         # Keep track of whether this is a relaxed scan calculation
         self.is_relaxed_scan = False
+        
+        # Flag for whether this calc is DFT.
+        self.is_DFT = False
+        
+        # Used to estimate CPU time from wall time.
+        self.num_cpu = 1
 
     def after_parsing(self):
         # ORCA doesn't add the dispersion energy to the "Total energy" (which
@@ -75,6 +82,28 @@ class ORCA(logfileparser.Logfile):
                     )
                     break
                 self.scfenergies[i] += dispersionenergy
+        
+        # ORCA prints singlet and triplet excited states separately, so the energies are out of order.
+        if hasattr(self, "etenergies"):
+            prop_names = ("etenergies", "etsyms", "etoscs", "etsecs", "etrotats")
+            
+            # First, set energies properly, keeping track of each energy's old index.
+            energy_index = sorted([(energy, index) for index, energy in enumerate(self.etenergies)], key = lambda energy_index: energy_index[0])
+            
+            props = {}
+            for prop_name in prop_names:
+                if hasattr(self, prop_name):
+                    # Check this property and etenergies are the same length (otherwise we can accidentally and silently truncate a list that's too long).
+                    if len(getattr(self, prop_name)) != len(self.etenergies):
+                        raise Exception("Parsed different number of {} ({}) than etenergies ({})".format(prop_name, len(getattr(self, prop_name)), len(self.etenergies)))
+                    
+                    # Reorder based on our mapping.
+                    props[prop_name] = [getattr(self, prop_name)[old_index] for energy, old_index in energy_index]
+            
+            # Assign back again
+            for prop_name in props:
+                setattr(self, prop_name, props[prop_name])
+            
 
     def extract(self, inputfile, line):
         """Extract information from the file object inputfile."""
@@ -88,6 +117,13 @@ class ORCA(logfileparser.Logfile):
             if "SVN: $Rev" in possible_revision_line:
                 version = re.search(r'\d+', possible_revision_line).group()
                 self.metadata["package_version"] += f"+{version}"
+        
+        # Extract basis-set info.
+        # ----- Orbital basis set information -----
+        # Your calculation utilizes the basis: cc-pVDZ
+        if "Your calculation utilizes the basis:" == line[:36]:
+            self.metadata['basis_set'] = line[37:].strip()
+        
 
         # ================================================================================
         #                                         WARNINGS
@@ -326,7 +362,13 @@ class ORCA(logfileparser.Logfile):
 
             self.metadata['symmetry_detected'] = point_group_full
             self.metadata['symmetry_used'] = point_group_abelian
-
+        
+        if "Density Functional" == line[1:19]:
+            self.is_DFT = True
+            # In theory we could also parse the functional from this section, 
+            # but sadly ORCA doesn't print simple functional names.
+            
+        
         # SCF convergence output begins with:
         #
         # --------------
@@ -387,6 +429,7 @@ class ORCA(logfileparser.Logfile):
                 line = next(inputfile)
             energy = utils.convertor(float(line.split()[3]), "hartree", "eV")
             self.scfenergies.append(energy)
+            self.metadata['methods'].append('HF' if not self.is_DFT else 'DFT')
 
             self._append_scfvalues_scftargets(inputfile, line)
 
@@ -410,6 +453,7 @@ class ORCA(logfileparser.Logfile):
 
             energy = utils.convertor(self.scfvalues[-1][-1][0], "hartree", "eV")
             self.scfenergies.append(energy)
+            self.metadata['methods'].append('HF' if not self.is_DFT else 'DFT')
 
             self._append_scfvalues_scftargets(inputfile, line)
 
@@ -611,6 +655,7 @@ Dispersion correction           -0.016199959
                 'ccenergies',
                 utils.convertor(utils.float(line.split()[-1]), 'hartree', 'eV')
             )
+            self.metadata['methods'].append('CCSD')
             line = next(inputfile)
             assert line[:23] == 'Singles Norm <S|S>**1/2'
             line = next(inputfile)
@@ -1060,21 +1105,29 @@ Dispersion correction           -0.016199959
             self.skip_lines(inputfile, ['dashes'])
 
 
-            # ORCA prints -inf for sinle atom free energy.
+            # ORCA prints -inf for single atom free energy.
             if self.natom > 1:
                 self.freeenergy = float(line.split()[5])
             else:
                 self.freeenergy = self.enthalpy - self.temperature * self.entropy
+                
+        if "ORCA TD-DFT/TDA CALCULATION" in line:
+            # Start of excited states, reset our attributes in case this is an optimised excited state calc
+            # (or another type of calc where excited states are calculated multiple times).
+            for attr in ("etenergies", "etsyms", "etoscs", "etsecs", "etrotats"):
+                if hasattr(self, attr):
+                    delattr(self, attr)
 
         # Read TDDFT information
         if any(x in line for x in ("TD-DFT/TDA EXCITED", "TD-DFT EXCITED")):
             # Could be singlets or triplets
             if line.find("SINGLETS") >= 0:
-                sym = "Singlet"
+                mult = "Singlet"
             elif line.find("TRIPLETS") >= 0:
-                sym = "Triplet"
+                mult = "Triplet"
             else:
-                sym = "Not specified"
+                # This behaviour matches the output Gaussian produces when it encounters an unfamiliar multiplicity.
+                mult = "???"
 
             etsecs = []
             etenergies = []
@@ -1088,7 +1141,6 @@ Dispersion correction           -0.016199959
             while line.find("STATE") >= 0:
                 broken = line.split()
                 etenergies.append(float(broken[7]))
-                etsyms.append(sym)
                 line = next(inputfile)
                 sec = []
                 # Contains SEC or is blank
@@ -1108,8 +1160,15 @@ Dispersion correction           -0.016199959
                     line = next(inputfile)
                     # ORCA 5.0 seems to print symmetry at end of block listing transitions
                     if 'Symmetry' in line:
+                        symm = line.split()[-1]
                         line = next(inputfile)
+                    else:
+                        symm = ""
                 etsecs.append(sec)
+                if mult != "" and symm != "":
+                    etsyms.append(mult + "-" + symm)
+                elif mult != "" or symm != "":
+                    etsyms.append(mult + symm)
                 line = next(inputfile)
 
             self.extend_attribute('etenergies', etenergies)
@@ -1280,9 +1339,58 @@ States  Energy Wavelength    D2        m2        Q2         D2+m2+Q2       D2/TO
                     etoscs.append(float(intensity))
 
                     line = next(inputfile)
-
-                self.set_attribute('etenergies', etenergies)
-                self.set_attribute('etoscs', etoscs)
+                
+                # Some of these sections contain data that we probably do not want to be populating etenergies
+                # and/or etoscs with.  For example, the SOC corrected spectra are for mixed singlet/triplet states,
+                # so they do not correspond to the symmetries given in etsyms, and the energy values given are
+                # probably not what the user would expect to find in etenergies anyway?
+                # Also, there are twice as many SOC states as true spin states, so half of the etenergies wouldn't 
+                # have a symmetry in etsyms at all...
+                #
+                # Don't parse from SOC sections.
+                # ROCIS COMBINED is combination of SOC and ROCIS (we still parse the normal ROCIS section).
+                if not any([soc_header in name for soc_header in ["SPIN ORBIT CORRECTED", "SOC CORRECTED", "ROCIS COMBINED"]]):
+                    # We need to be careful about how we parse etenergies from these spectrum sections.
+                    # First, and in most cases, energies printed here will be the same as those printed in 
+                    # previous sections. The energies in cm-1 aught to match exactly to those parsed previously,
+                    # but other units may have rounding errors.
+                    # Secondly, some methods (ROCIS, CASSCF, SOC to name a few) may only print their final excited state
+                    # energies in this spectrum section, in which case the energies will not match those previously parsed
+                    # (which will be from lower levels of theory that we're not interested in). This means we cannot simply
+                    # ignore the energies printed. Also, in this case we must decide whether to discard other previously
+                    # parsed etdata (etsyms, etsecs etc).
+                    # Thirdly, SOC prints spin-mixed excited state spectra. This is interesting, but does not match the 
+                    # number of states or symmetry of data parsed in previous sections, so is not used to overwrite etenergies.
+                    
+                    # If we have no previously parsed etnergies, there's nothing to worry about.
+                    if not hasattr(self, "etenergies"):
+                        self.set_attribute("etenergies", etenergies)
+                    
+                    # Determine if these energies are same as those previously parsed.
+                    # May want to use a smarter comparison?
+                    elif len(etenergies) == len(self.etenergies) and \
+                        all(
+                            [self.etenergies[index] == etenergy for
+                            index, etenergy in enumerate(etenergies)]
+                        ):
+                        pass
+                    
+                    # New energies.
+                    else:
+                        # Because these energies are new, we do not know if they correspond to the same level of theory
+                        # as the previously parsed etsyms etc.
+                        self.logger.warning(
+                            "New excited state energies encountered in spectrum section, resetting excited state attributes")
+                        
+                        for attr in ("etenergies", "etsyms", "etoscs", "etsecs", "etrotats"):
+                            if hasattr(self, attr):
+                                delattr(self, attr)
+                                
+                        self.set_attribute("etenergies", etenergies)
+                    
+                    self.set_attribute('etoscs', etoscs)
+                
+                # Save everything to transprop.
                 self.transprop[name] = (numpy.asarray(etenergies), numpy.asarray(etoscs))
 
         if line.strip() == "CD SPECTRUM":
@@ -1881,9 +1989,48 @@ States  Energy Wavelength    D2        m2        Q2         D2+m2+Q2       D2/TO
             energy = float(next(inputfile).strip())
             self.skip_line(inputfile, 'blank')
             core_energy = float(next(inputfile).split()[3])
+            
+        if "*        Program running with" in line  and "parallel MPI-processes     *" in line:
+            # ************************************************************
+            # *        Program running with 4 parallel MPI-processes     *
+            # *              working on a common directory               *
+            # ************************************************************
+            self.num_cpu = int(line.split()[4])
 
         if line[:15] == 'TOTAL RUN TIME:':
+            # TOTAL RUN TIME: 0 days 0 hours 0 minutes 11 seconds 901 msec
             self.metadata['success'] = True
+            
+            # Parse timings.
+            # We also have timings for individual modules (SCF, MDCI etc) which we could use instead?
+            time_split = line.split()
+            days = int(time_split[3])
+            hours = int(time_split[5])
+            minutes = int(time_split[7])
+            seconds = int(time_split[9])
+            milliseconds = int(time_split[11])
+            
+            if "wall_time" not in self.metadata:
+                self.metadata['wall_time'] = []
+            if "cpu_time" not in self.metadata:
+                self.metadata['cpu_time'] = []
+            
+            self.metadata['wall_time'].append(datetime.timedelta(
+                days = days,
+                hours = hours,
+                minutes = minutes,
+                seconds = seconds,
+                milliseconds = milliseconds
+            ))
+            
+            self.metadata['cpu_time'].append(datetime.timedelta(
+                days = days,
+                hours = hours,
+                minutes = minutes,
+                seconds = seconds,
+                milliseconds = milliseconds
+            ) * self.num_cpu)
+            
 
     def parse_charge_section(self, line, inputfile, chargestype):
         """Parse a charge section, modifies class in place

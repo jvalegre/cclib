@@ -377,11 +377,11 @@ class NWChem(logfileparser.Logfile):
 
                 self.skip_line(inputfile, 'blank')
 
-                indices = [int(i) for i in inputfile.next().split()]
+                indices = [int(i) for i in next(inputfile).split()]
                 assert indices[0] == len(aooverlaps) + 1
 
                 self.skip_line(inputfile, "dashes")
-                data = [inputfile.next().split() for i in range(self.nbasis)]
+                data = [next(inputfile).split() for i in range(self.nbasis)]
                 indices = [int(d[0]) for d in data]
                 assert indices == list(range(1, self.nbasis+1))
 
@@ -828,11 +828,11 @@ class NWChem(logfileparser.Logfile):
             while line.strip():
                 index, atomname, nuclear, atom = line.split()[:4]
                 shells = line.split()[4:]
-                charges.append(float(atom)-float(nuclear))
+                charges.append(float(nuclear)-float(atom))
                 line = next(inputfile)
             self.atomcharges['mulliken'] = charges
 
-        # Not the the 'overlap population' as printed in the Mulliken population analysis,
+        # Note the 'overlap population' as printed in the Mulliken population analysis
         # is not the same thing as the 'overlap matrix'. In fact, it is the overlap matrix
         # multiplied elementwise times the density matrix.
         #
@@ -894,15 +894,15 @@ class NWChem(logfileparser.Logfile):
                 ncharge = float(ncharge)
                 epop = float(epop)
                 assert iatom == (i+1)
-                charges.append(epop-ncharge)
+                charges.append(ncharge-epop)
 
             if not hasattr(self, 'atomcharges'):
                 self.atomcharges = {}
-            if not "mulliken" in self.atomcharges:
-                self.atomcharges['mulliken'] = charges
-            else:
+            if "mulliken" in self.atomcharges:
                 assert max(self.atomcharges['mulliken'] - numpy.array(charges)) < 0.01
-                self.atomcharges['mulliken'] = charges
+            # This is going to be higher precision than "Mulliken analysis of
+            # the total density".
+            self.atomcharges['mulliken'] = charges
 
         # NWChem prints the dipole moment in atomic units first, and we could just fast forward
         # to the values in Debye, which are also printed. But we can also just convert them
@@ -1167,8 +1167,8 @@ class NWChem(logfileparser.Logfile):
                 utils.float(line.split()[8])
                 + utils.convertor(self.scfenergies[-1], "eV", "hartree"),
             )
-        if line[1:32] == "Zero-Point correction to Energy" and hasattr(self, "scfenergies"):
-            self.set_attribute("zpve", utils.float(line.split()[8]))
+        if line[1:32] == "Zero-Point correction to Energy":
+            self.set_attribute("zpve", float(line.split()[8]))
         if line[1:29] == "Thermal correction to Energy" and hasattr(self, "scfenergies"):
             self.set_attribute(
                 "electronic_thermal_energy",
