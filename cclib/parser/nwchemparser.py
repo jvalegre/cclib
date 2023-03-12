@@ -1208,8 +1208,8 @@ class NWChem(logfileparser.Logfile):
             while line.strip().startswith('B=') or line.strip().startswith('C='):
                 roconst.append(float(line.strip().split()[1])*29.9792458)
                 rotemp.append(float(line.strip().split()[4]))
-            self.set_attribute('roconst', roconst)
-            self.set_attribute('rotemp', rotemp)
+            self.set_attribute('rotconsts', roconst)
+            self.set_attribute('rottemp', rotemp)
 
         # NWChem TD-DFT excited states transitions
         #
