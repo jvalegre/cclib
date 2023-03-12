@@ -68,11 +68,40 @@ class GenericSPTest(unittest.TestCase):
     @skipForLogfile('Molpro/basicMolpro2006', "These tests were run a long time ago and since we don't have access to Molpro 2006 anymore, we can skip this test (it is tested in 2012)")
     @skipForParser('Turbomole','The parser is still being developed so we skip this test')
     def testatomcharges(self):
-        """Are atomcharges (at least Mulliken) consistent with natom and sum to zero?"""
-        for type in set(['mulliken'] + list(self.data.atomcharges.keys())):
-            charges = self.data.atomcharges[type]
-            self.assertEqual(len(charges), self.data.natom)
-            self.assertAlmostEqual(sum(charges), 0.0, delta=0.001)
+        """Are atomic charges consistent with natom?"""
+        for atomcharge_type in self.data.atomcharges:
+            charges = self.data.atomcharges[atomcharge_type]
+            natom = self.data.natom
+            self.assertEqual(
+                len(charges),
+                natom,
+                msg=f"len(atomcharges['{atomcharge_type}']) = {len(charges)}, natom = {natom}"
+            )
+
+    @skipForParser('DALTON', 'DALTON has a very low accuracy for the printed values of all populations (2 decimals rounded in a weird way), so let it slide for now')
+    @skipForParser('FChk', 'The parser is still being developed so we skip this test')
+    @skipForLogfile('Jaguar/basicJaguar7', 'We did not print the atomic partial charges in the unit tests for this version')
+    @skipForLogfile('Molpro/basicMolpro2006', "These tests were run a long time ago and since we don't have access to Molpro 2006 anymore, we can skip this test (it is tested in 2012)")
+    @skipForParser('Turbomole','The parser is still being developed so we skip this test')
+    def testatomcharges_mulliken(self):
+        """Do Mulliken atomic charges sum to zero?"""
+        charges = self.data.atomcharges["mulliken"]
+        self.assertAlmostEqual(sum(charges), 0.0, delta=0.001)
+
+    @skipForParser('ADF', 'Lowdin charges not present by default')
+    @skipForParser('DALTON', 'DALTON has a very low accuracy for the printed values of all populations (2 decimals rounded in a weird way), so let it slide for now')
+    @skipForParser('FChk', 'The parser is still being developed so we skip this test')
+    @skipForParser('Gaussian', 'Lowdin charges not present by default')
+    @skipForParser('Jaguar', 'Lowdin charges not present by default')
+    @skipForParser('NWChem', 'Lowdin charges not present by default')
+    @skipForParser('Molcas', 'Lowdin charges not present by default')
+    @skipForParser('Molpro', 'Lowdin charges not present by default')
+    @skipForParser('QChem', 'Lowdin charges not present by default')
+    @skipForParser('Turbomole','The parser is still being developed so we skip this test')
+    def testatomcharges_lowdin(self):
+        """Do Lowdin atomic charges sum to zero?"""
+        charges = self.data.atomcharges["lowdin"]
+        self.assertAlmostEqual(sum(charges), 0.0, delta=0.001)
 
     def testatomcoords(self):
         """Are the dimensions of atomcoords 1 x natom x 3?"""
@@ -251,6 +280,26 @@ class GenericSPTest(unittest.TestCase):
         """There should be no optdone attribute set."""
         self.assertFalse(hasattr(self.data, 'optdone'))
 
+    @skipForParser('ADF', 'Not implemented yes')
+    @skipForParser('DALTON', 'Not implemented yes')
+    @skipForParser('FChk', 'Rotational constants are never written to fchk files')
+    @skipForParser('GAMESS', 'Not implemented yes')
+    @skipForParser('GAMESSUK', 'Not implemented yet')
+    @skipForParser('Jaguar', 'Not implemented yet')
+    @skipForParser('Molcas', 'Not implemented yes')
+    @skipForParser('Molpro', 'Not implemented yes')
+    @skipForParser('NWChem', 'Not implemented yes')
+    @skipForParser('ORCA', 'Not implemented yes')
+    @skipForParser('Psi4', 'Not implemented yes')
+    @skipForParser('QChem', 'Not implemented yes')
+    @skipForParser('Turbomole', 'Not implemented yes')
+    def testrotconsts(self):
+        """A single geometry leads to single set of rotational constants."""
+        self.assertEqual(self.data.rotconsts.shape, (1, 3))
+        # taken from Gaussian16/dvb_sp.out
+        ref = [4.6266363, 0.6849065, 0.5965900]
+        numpy.testing.assert_allclose(self.data.rotconsts[0], ref, rtol=0, atol=1.0e-3)
+
     @skipForParser('FChk', 'The parser is still being developed so we skip this test')
     @skipForParser('Gaussian', 'Logfile needs to be updated')
     @skipForParser('Jaguar', 'No dipole moments in the logfile')
@@ -307,7 +356,6 @@ class GenericSPTest(unittest.TestCase):
     @skipForParser('ADF', 'reading basis set names is not implemented')
     @skipForParser('GAMESSUK', 'reading basis set names is not implemented')
     @skipForParser('Molcas', 'reading basis set names is not implemented')
-    @skipForParser('ORCA', 'reading basis set names is not implemented')
     @skipForParser('Psi4', 'reading basis set names is not implemented')
     def testmetadata_basis_set(self):
         """Does metadata have expected keys and values?"""
@@ -386,11 +434,9 @@ class GenericSPTest(unittest.TestCase):
     @skipForParser('Jaguar', 'reading cpu/wall time is not implemented for this parser') 
     @skipForParser('Molcas', ' reading cpu/wall time is not implemented for this parser') 
     @skipForParser('Molpro', 'reading cpu/wall time is not implemented for this parser') 
-    @skipForParser('NWChem', 'reading cpu/wall time is not implemented for this parser') 
-    @skipForParser('ORCA', 'reading cpu not implemented for this parser, wall time not available') 
+    @skipForParser('NWChem', 'reading cpu/wall time is not implemented for this parser')  
     @skipForParser('Psi3', 'reading cpu/wall time is not implemented for this parser') 
-    @skipForParser('Psi4', 'reading cpu/wall time is not implemented for this parser') 
-    @skipForParser('Turbomole', 'reading cpu/wall time is not implemented for this parser') 
+    @skipForParser('Psi4', 'reading cpu/wall time is not implemented for this parser')
     def testmetadata_times(self):
         """Does metadata have expected keys and values of correct types?"""
         if "wall_time" in self.data.metadata:

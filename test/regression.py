@@ -770,8 +770,7 @@ def testGaussian_Gaussian98_test_Cu2_log(logfile):
     """An example of the number of basis set function changing."""
     assert logfile.data.nbasis == 38
 
-    assert logfile.data.metadata["cpu_time"] == [datetime.timedelta(seconds=25, microseconds=800000)]
-    assert "wall_time" not in logfile.data.metadata
+    assert logfile.data.metadata["cpu_time"] == logfile.data.metadata["wall_time"] == [datetime.timedelta(seconds=25, microseconds=800000)]
     assert logfile.data.metadata["legacy_package_version"] == "98revisionA.11.4"
     assert logfile.data.metadata["package_version"] == "1998+A.11.4"
     assert isinstance(
@@ -882,8 +881,8 @@ def testGaussian_Gaussian03_dvb_gopt_symmfollow_log(logfile):
     """
     assert len(logfile.data.atomcoords) == len(logfile.data.geovalues)
 
-    assert logfile.data.metadata["cpu_time"] == [datetime.timedelta(seconds=99)]
-    assert "wall_time" not in logfile.data.metadata
+    # This calc only uses one CPU, so wall_time == cpu_time.
+    assert logfile.data.metadata["cpu_time"] == logfile.data.metadata["wall_time"]== [datetime.timedelta(seconds=99)]
     assert logfile.data.metadata["legacy_package_version"] == "03revisionC.01"
     assert logfile.data.metadata["package_version"] == "2003+C.01"
     assert isinstance(
@@ -1000,8 +999,7 @@ def testGaussian_Gaussian09_dvb_gopt_unconverged_log(logfile):
     assert hasattr(logfile.data, 'optdone') and not logfile.data.optdone
     assert logfile.data.optstatus[-1] == logfile.data.OPT_UNCONVERGED
 
-    assert logfile.data.metadata["cpu_time"] == [datetime.timedelta(seconds=27, microseconds=700000)]
-    assert "wall_time" not in logfile.data.metadata
+    assert logfile.data.metadata["cpu_time"] == logfile.data.metadata["wall_time"] == [datetime.timedelta(seconds=27, microseconds=700000)]
     assert logfile.data.metadata["package_version"] == "2009+D.01"
 
 
@@ -1161,6 +1159,10 @@ def testGaussian_Gaussian09_benzene_excited_states_optimization_issue889_log(log
     assert len(logfile.data.etsecs) == 20
     assert logfile.data.etveldips.shape == (20,3)
 
+def testGaussian_Gaussian09_issue1150_log(logfile):
+    """ Symmetry parsing for Gaussian09 was broken"""
+    assert logfile.metadata['symmetry_detected'] == 'c1'
+
 def testGaussian_Gaussian16_H3_natcharge_log(logfile):
     """A calculation with natural charges calculated. Test issue 1055 where 
     only the beta set of charges was parsed rather than the spin independent"""
@@ -1219,6 +1221,16 @@ def testGaussian_Gaussian16_C01_CC_log(logfile):
     """For issue 1110, check parsing of ccenergies in newer Gaussian version"""
 
     assert hasattr(logfile.data, "ccenergies")
+    
+def testGaussian_Gaussian16_Ethane_mp5_log(logfile):
+    """For issue 1163, check we can parse a log file that has MPn in its description."""
+    
+    # This issue is about failing to parse if certain strings are present in the Gaussian log file description section.
+    # Check we can still parse MP energies up to MP5
+    assert hasattr(logfile.data, "mpenergies")
+    assert len(logfile.data.mpenergies) == 1
+    assert len(logfile.data.mpenergies[0]) == 4
+    
 
 # Jaguar #
 
@@ -2908,6 +2920,12 @@ class GAMESSUSSPunTest_charge0(GenericSPunTest):
     def testcharge_and_mult(self):
         """The charge in the input was wrong."""
         self.assertEqual(self.data.charge, 0)
+
+    def testatomcharges_mulliken(self):
+        """The charge in the input was wrong."""
+        charges = self.data.atomcharges["mulliken"]
+        self.assertAlmostEqual(sum(charges), 0.0, delta=0.001)
+
     @unittest.skip('HOMOs were incorrect due to charge being wrong')
     def testhomos(self):
         """HOMOs were incorrect due to charge being wrong."""
@@ -2967,7 +2985,23 @@ class GaussianPolarTest(ReferencePolarTest):
 # Jaguar #
 
 
-class JaguarSPTest_6_31gss(JaguarSPTest):
+class JaguarSPTest_noatomcharges(JaguarSPTest):
+    """Atomic partial charges were not printed in old Jaguar unit tests."""
+
+    @unittest.skip("Cannot parse atomcharges from this file.")
+    def testatomcharges(self):
+        """Are atomic charges consistent with natom?"""
+
+    @unittest.skip("Cannot parse atomcharges from this file.")
+    def testatomcharges_mulliken(self):
+        """Do Mulliken atomic charges sum to zero?"""
+
+    @unittest.skip("Cannot parse atomcharges from this file.")
+    def testatomcharges_lowdin(self):
+        """Do Lowdin atomic charges sum to zero?"""
+
+
+class JaguarSPTest_6_31gss(JaguarSPTest_noatomcharges):
     """AO counts and some values are different in 6-31G** compared to STO-3G."""
     nbasisdict = {1: 5, 6: 15}
     b3lyp_energy = -10530
@@ -3017,7 +3051,7 @@ class JaguarGeoOptTest_nmo45(GenericGeoOptTest):
         self.assertEqual(len(self.data.moenergies[0]), 45)
 
 
-class JaguarSPTest_nmo45(GenericSPTest):
+class JaguarSPTest_nmo45(JaguarSPTest_noatomcharges):
     def testlengthmoenergies(self):
         """Without special options, Jaguar only print Homo+10 orbital energies."""
         self.assertEqual(len(self.data.moenergies[0]), 45)
@@ -3100,6 +3134,15 @@ class MolproBigBasisTest_cart(MolproBigBasisTest):
 # ORCA #
 
 
+class OrcaSPTest_nobasis(OrcaSPTest):
+    """Versions pre-4.0 do not concretely print the basis set(s) used aside
+    from repeating the input file.
+    """
+
+    def testmetadata_basis_set(self):
+        self.assertNotIn("basis_set", self.data.metadata)
+
+
 class OrcaSPTest_3_21g(OrcaSPTest):
     nbasisdict = {1: 2, 6: 9}
     b3lyp_energy = -10460
@@ -3128,9 +3171,16 @@ class OrcaSPunTest_charge0(GenericSPunTest):
     def testcharge_and_mult(self):
         """The charge in the input was wrong."""
         self.assertEqual(self.data.charge, 0)
+
+    def testatomcharges_mulliken(self):
+        """The charge in the input was wrong."""
+        charges = self.data.atomcharges["mulliken"]
+        self.assertAlmostEqual(sum(charges), 0.0, delta=0.001)
+
     @unittest.skip('HOMOs were incorrect due to charge being wrong.')
     def testhomos(self):
         """HOMOs were incorrect due to charge being wrong."""
+
     def testorbitals(self):
         """Closed-shell calculation run as open-shell."""
         self.assertTrue(self.data.closed_shell)
@@ -3141,9 +3191,25 @@ class OrcaTDDFTTest_error(OrcaTDDFTTest):
         """These values used to be less accurate, probably due to wrong coordinates."""
         self.assertEqual(len(self.data.etoscs), self.number)
         self.assertAlmostEqual(max(self.data.etoscs), 1.0, delta=0.2)
+        
+class OrcaTDDFTTest_pre5(OrcaTDDFTTest):
+    
+    symmetries = [
+            "Triplet",
+            "Triplet",
+            "Triplet",
+            "Triplet",
+            "Triplet",
+            "Singlet",
+            "Singlet",
+            "Singlet",
+            "Singlet",
+            "Singlet",
+        ]
 
 
-class OrcaTDDFTTest_pre1085(OrcaTDDFTTest):
+class OrcaTDDFTTest_pre1085(OrcaTDDFTTest_pre5):
+    
     def testoscs(self):
         """These values changed in the electric dipole osc strengths prior to Orca 4.0. See PR1085"""
         self.assertEqual(len(self.data.etoscs), self.number)
@@ -3367,7 +3433,7 @@ old_unittests = {
 
     "ORCA/ORCA2.8/dvb_gopt.out":    OrcaGeoOptTest,
     "ORCA/ORCA2.8/dvb_sp.out":      GenericBasisTest,
-    "ORCA/ORCA2.8/dvb_sp.out":      OrcaSPTest,
+    "ORCA/ORCA2.8/dvb_sp.out":      OrcaSPTest_nobasis,
     "ORCA/ORCA2.8/dvb_sp_un.out":   OrcaSPunTest_charge0,
     "ORCA/ORCA2.8/dvb_td.out":      OrcaTDDFTTest_pre1085,
     "ORCA/ORCA2.8/dvb_ir.out":      OrcaIRTest_old,
@@ -3377,7 +3443,7 @@ old_unittests = {
     "ORCA/ORCA2.9/dvb_raman.out":   GenericRamanTest,
     "ORCA/ORCA2.9/dvb_scan.out":    OrcaRelaxedScanTest,
     "ORCA/ORCA2.9/dvb_sp.out":      GenericBasisTest,
-    "ORCA/ORCA2.9/dvb_sp.out":      OrcaSPTest,
+    "ORCA/ORCA2.9/dvb_sp.out":      OrcaSPTest_nobasis,
     "ORCA/ORCA2.9/dvb_sp_un.out":   GenericSPunTest,
     "ORCA/ORCA2.9/dvb_td.out":      OrcaTDDFTTest_pre1085,
 
@@ -3388,7 +3454,7 @@ old_unittests = {
     "ORCA/ORCA3.0/dvb_scan.out":          OrcaRelaxedScanTest,
     "ORCA/ORCA3.0/dvb_sp_un.out":         GenericSPunTest,
     "ORCA/ORCA3.0/dvb_sp.out":            GenericBasisTest,
-    "ORCA/ORCA3.0/dvb_sp.out":            OrcaSPTest,
+    "ORCA/ORCA3.0/dvb_sp.out":            OrcaSPTest_nobasis,
     "ORCA/ORCA3.0/dvb_td.out":            OrcaTDDFTTest_pre1085,
     "ORCA/ORCA3.0/Trp_polar.out":         ReferencePolarTest,
     "ORCA/ORCA3.0/trithiolane_polar.out": GaussianPolarTest,
@@ -3398,7 +3464,7 @@ old_unittests = {
     "ORCA/ORCA4.0/Trp_polar.out":         ReferencePolarTest,
     "ORCA/ORCA4.0/dvb_sp.out":            OrcaSPTest,
     "ORCA/ORCA4.0/dvb_sp_un.out":         GenericSPunTest,
-    "ORCA/ORCA4.0/dvb_td.out":            OrcaTDDFTTest,  
+    "ORCA/ORCA4.0/dvb_td.out":            OrcaTDDFTTest_pre5,
     "ORCA/ORCA4.0/dvb_rocis.out":         OrcaROCIS40Test,
     "ORCA/ORCA4.0/dvb_ir.out":            GenericIRTest,
     "ORCA/ORCA4.0/dvb_raman.out":         OrcaRamanTest,

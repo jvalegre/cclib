@@ -75,6 +75,7 @@ class ccData:
         optstatus -- optimization status for each set of atomic coordinates (array[1])
         polarizabilities -- (dipole) polarizabilities, static or dynamic (list of arrays[2])
         pressure -- pressure used for Thermochemistry (float, atm)
+        rotconsts -- rotational constants (array[2], GHz)
         scancoords -- geometries of each scan step (array[3], angstroms)
         scanenergies -- energies of potential energy surface (list)
         scannames -- names of variables scanned (list of strings)
@@ -166,8 +167,8 @@ class ccData:
        "point_group":      Attribute(str,              'symmetry point group',        'properties:rotational'),
        "polarizabilities": Attribute(list,             'polarizabilities',            'N/A'),
        "pressure":         Attribute(float,            'pressure',                    'properties'),
-       "roconst":          Attribute(numpy.ndarray,    'rotational constants',        'properties:rotational'),
-       "rotemp":           Attribute(numpy.ndarray,    'rotational temperatures',     'properties:rotational'),
+       "rotconsts":        Attribute(numpy.ndarray,    'rotational constants',        'atoms:coords:rotconsts'),
+       "rottemp":           Attribute(numpy.ndarray,    'rotational temperatures',     'properties:rotational'),
        "s2_after_anni":    Attribute(numpy.ndarray,    'S2 after annihilation',       'optimization'),      
        "s2_after_anni_fin": Attribute(float,           'S2 after annihilation',       'properties'),      
        "s2_before_anni":   Attribute(numpy.ndarray,    'S2 before annihilation',      'optimization'),      

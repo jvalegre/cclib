@@ -24,6 +24,13 @@ class GenericTDTest(unittest.TestCase):
 
     number = 5
     expected_l_max = 41000
+    symmetries = [
+            "Singlet-Bu",
+            "Singlet-Bu",
+            "Singlet-Ag",
+            "Singlet-Bu",
+            "Singlet-Ag",
+        ]
 
     @skipForParser('Molcas','The parser is still being developed so we skip this test')
     @skipForLogfile('Turbomole/basicTurbomole7.4/CO_cc2_TD_trip', 'Oscillator strengths are not available for Turbomole triplets using ricc2 but are required for testenergies()')
@@ -67,6 +74,22 @@ class GenericTDTest(unittest.TestCase):
     def testsymsnumber(self):
         """Is the length of etsyms correct?"""
         self.assertEqual(len(self.data.etsyms), self.number)
+        
+    
+    @skipForParser('ADF', 'etrotats are not yet implemented')
+    @skipForParser('DALTON', 'etrotats are not yet implemented')
+    @skipForParser('FChk', 'etrotats are not yet implemented')
+    @skipForParser('GAMESS', 'etrotats are not yet implemented')
+    @skipForParser('GAMESSUK', 'etrotats are not yet implemented')
+    @skipForParser('Jaguar', 'etrotats are not yet implemented')
+    @skipForParser('NWChem', 'etrotats are not yet implemented')
+    @skipForParser('QChem', 'Q-Chem cannot calculate rotatory strengths')
+    @skipForLogfile("ORCA/basicORCA4.2", "etsyms are only available in ORCA >= 5.0") 
+    @skipForLogfile("ORCA/basicORCA4.1", "etsyms are only available in ORCA >= 5.0") 
+    @skipForLogfile("Gaussian/basicGaussian09", "symmetry is missing for this log file") 
+    def testsyms(self):
+        """Are the values of etsyms correct?"""
+        self.assertListEqual(self.data.etsyms, self.symmetries)
 
     @skipForParser('ADF', 'etrotats are not yet implemented')
     @skipForParser('DALTON', 'etrotats are not yet implemented')
@@ -81,6 +104,20 @@ class GenericTDTest(unittest.TestCase):
     def testrotatsnumber(self):
         """Is the length of etrotats correct?"""
         self.assertEqual(len(self.data.etrotats), self.number)
+    
+    @skipForParser('ADF', 'optstate is not yet implemented')
+    @skipForParser('DALTON', 'optstate are not yet implemented')
+    @skipForParser('FChk', 'optstate are not yet implemented')
+    @skipForParser('GAMESS', 'optstate are not yet implemented')
+    @skipForParser('GAMESSUK', 'optstate are not yet implemented')
+    @skipForParser('Jaguar', 'optstate are not yet implemented')
+    @skipForParser('NWChem', 'optstate are not yet implemented')
+    @skipForParser('ORCA', 'optstate are not yet implemented')
+    @skipForParser('QChem', 'optstate are not yet implemented')
+    @skipForParser('Turbomole', 'optstate are not yet implemented')
+    def testoptstate(self):
+        # All our examples have a default state-of-interest of 1 (index 0).
+        self.assertEqual(self.data.metadata['opt_state'], 0)
 
 class ADFTDDFTTest(GenericTDTest):
     """Customized time-dependent DFT unittest"""
@@ -144,12 +181,23 @@ class OrcaTDDFTTest(GenericTDTest):
 
     number = 10
     expected_l_max = 48000
+    symmetries = [
+            "Triplet-Bu",
+            "Triplet-Ag",
+            "Triplet-Bu",
+            "Triplet-Bu",
+            "Triplet-Bu",
+            "Singlet-Bu",
+            "Singlet-Bu",
+            "Singlet-Ag",
+            "Singlet-Bu",
+            "Singlet-Ag",
+        ]
 
     def testoscs(self):
         """Is the maximum of etoscs in the right range?"""
         self.assertEqual(len(self.data.etoscs), self.number)
         self.assertAlmostEqual(max(self.data.etoscs), 1.17, delta=0.01)
-
 
 class QChemTDDFTTest(GenericTDTest):
     """Customized time-dependent HF/DFT unittest"""
@@ -177,7 +225,7 @@ class GenericTDDFTtrpTest(GenericTDTest):
 
 class OrcaROCISTest(GenericTDTest):
     """Customized test for ROCIS"""
-    number = 57
+    number = 4
     expected_l_max = 2316970.8
     # per 1085, no VELOCITY DIPOLE MOMENTS are parsed
     n_spectra = 7
@@ -208,6 +256,10 @@ class OrcaROCISTest(GenericTDTest):
     def testrotatsnumber(self):
         """ROCIS does not calculate rotatory strengths"""
         pass
+    
+    def testsyms(self):
+        """ROCIS does not show symmetries"""
+        pass
 
 
 class OrcaROCIS40Test(OrcaROCISTest):
@@ -224,17 +276,46 @@ class TurbomoleTDTest(GenericTDTest):
     
     number = 10
     expected_l_max = 91432
+    symmetries = [
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        ]
     
     def testoscs(self):
         """Is the maximum of etoscs in the right range?"""
         self.assertEqual(len(self.data.etoscs), self.number)
         self.assertAlmostEqual(max(self.data.etoscs), 0.19, delta=0.1)
+    
+    @skipForLogfile('Turbomole/basicTurbomole7.4/CO_cc2_TD', 'There are no dipole moments in ricc2')
+    def testetmagdipsshape(self):
+        """Is the shape of etmagdips correct?"""
+        self.assertEqual(numpy.shape(self.data.etmagdips), (self.number, 3))
 
 class TurbomoleTDADC2Test(GenericTDTest):
     """Customized time-dependent HF/DFT unittest"""
     
     number = 10
     expected_l_max = 136329
+    symmetries = [
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        "Singlet-A",
+        ]
     
     def testoscs(self):
         """Is the maximum of etoscs in the right range?"""
@@ -246,6 +327,18 @@ class TurbomoleTDTripTest(GenericTDTest):
     
     number = 10
     expected_l_max = 51530
+    symmetries = [
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        ]
 
     def testoscs(self):
         """Is the maximum of etoscs in the right range?"""
@@ -257,6 +350,18 @@ class TurbomoleTDCC2TripTest(GenericTDTest):
     # This test is for triplets with ricc2, which does not support oscillator strengths.
     
     number = 10
+    symmetries = [
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        "Triplet-A",
+        ]
 
     def testenergies(self):
         """Is the l_max reasonable?"""
